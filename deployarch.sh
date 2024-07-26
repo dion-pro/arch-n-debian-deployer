@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Check for sufficient arguments
-if [ "$#" -lt 3 ]; then
-    echo "Usage: $0 <snapshot_path> <root_partition> <boot_mode> [efi_partition]"
+if [ "$#" -lt 4 ]; then
+    echo "Usage: $0 <snapshot_path> <root_partition> <boot_mode> [efi_partition (uefi only)] [disk (bios only)]"
     echo "Example for UEFI: $0 /path/to/backup/system.tar.gz /dev/sdX2 uefi /dev/sdX1"
-    echo "Example for BIOS: $0 /path/to/backup/system.tar.gz /dev/sdX1 bios"
+    echo "Example for BIOS: $0 /path/to/backup/system.tar.gz /dev/sdX1 bios /dev/sdX"
     exit 1
 fi
 
@@ -12,7 +12,11 @@ fi
 SNAPSHOT_PATH="$1"
 ROOT_PARTITION="$2"
 BOOT_MODE="$3"
-EFI_PARTITION="$4"
+if [ "$BOOT_MODE" == 'uefi']; then
+    EFI_PARTITION="$4"
+else
+    DISK_NAME="$4"
+fi
 
 # Check if the snapshot path exists
 if [ ! -f "$SNAPSHOT_PATH" ]; then
@@ -60,14 +64,12 @@ if [ "$BOOT_MODE" == "uefi" ]; then
             arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
             ;;
         2)  # systemd-boot
-            arch-chroot /mnt bootctl --no-variables install
+            arch-chroot /mnt bootctl install
             ;;
         3)  # Syslinux
-            # Copy Syslinux files
             arch-chroot /mnt mkdir -p /boot/efi/EFI/syslinux
             arch-chroot /mnt cp -r /usr/lib/syslinux/efi64/* /boot/efi/EFI/syslinux
-            # Create UEFI boot entry
-            arch-chroot /mnt efibootmgr --create --disk ${EFI_PARTITION} --part 1 --loader /EFI/syslinux/syslinux.efi --label "Syslinux" --unicode
+            arch-chroot /mnt syslinux-install_update -i -a -m
             ;;
         *)  # Invalid choice
             echo "Invalid choice. Exiting."
@@ -87,7 +89,7 @@ else
     mount --bind /run /mnt/run
     case $BOOTLOADER_CHOICE in
         1)  # GRUB
-            arch-chroot /mnt grub-install --target=i386-pc ${ROOT_PARTITION}
+            arch-chroot /mnt grub-install --target=i386-pc ${DISK_NAME}
             arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
             ;;
         3)  # Syslinux
@@ -95,7 +97,7 @@ else
             ;;
         2)  # systemd-boot in BIOS mode defaults to GRUB
             echo "systemd-boot is not supported in BIOS mode. Defaulting to GRUB."
-            arch-chroot /mnt grub-install --target=i386-pc ${ROOT_PARTITION}
+            arch-chroot /mnt grub-install --target=i386-pc ${DISK_NAME}
             arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
             ;;
         *)  # Invalid choice
@@ -111,4 +113,4 @@ fi
 
 # Unmount and reboot
 umount /mnt
-echo "Deployment complete. Rebooting..."
+echo "Deployment complete."
